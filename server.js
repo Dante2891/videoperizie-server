@@ -142,6 +142,96 @@ app.put('/perizie/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// Middleware solo admin piattaforma
+function adminMiddleware(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ errore: 'Non autorizzato' });
+  try {
+    const utente = jwt.verify(token, JWT_SECRET);
+    if (utente.ruolo !== 'admin') return res.status(403).json({ errore: 'Non autorizzato' });
+    req.utente = utente;
+    next();
+  } catch(e) {
+    res.status(401).json({ errore: 'Token non valido' });
+  }
+}
+
+// GET tutti gli studi
+app.get('/admin/studi', adminMiddleware, async (req, res) => {
+  try {
+    const data = await sb('studi?select=*&order=creato_il.desc');
+    res.json(data);
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// CREA nuovo studio + operatore admin
+app.post('/admin/studi', adminMiddleware, async (req, res) => {
+  const { nome_studio, email_studio, nome, cognome, email, password, piano } = req.body;
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
+    const studio = await sb('studi', 'POST', {
+      nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
+    });
+    await sb('operatori', 'POST', {
+      studio_id: studio[0].id,
+      nome, cognome, email,
+      password_hash: hash,
+      ruolo: 'admin'
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// AGGIORNA studio (piano, attivo)
+app.put('/admin/studi/:id', adminMiddleware, async (req, res) => {
+  const { piano, attivo } = req.body;
+  try {
+    const body = {};
+    if (piano !== undefined) {
+      body.piano = piano;
+      body.limite_sessioni = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
+    }
+    if (attivo !== undefined) body.attivo = attivo;
+    await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.params.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify(body)
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// GET log errori
+app.get('/admin/logs', adminMiddleware, async (req, res) => {
+  try {
+    const data = await sb('logs?select=*&order=creato_il.desc&limit=100');
+    res.json(data);
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// Reset sessioni mese tutti gli studi
+app.post('/admin/reset-sessioni', adminMiddleware, async (req, res) => {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/studi`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ sessioni_mese: 0 })
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
 // SESSIONI WebRTC
 const sessioni = {};
 
