@@ -100,6 +100,12 @@ app.get('/perizie', authMiddleware, async (req, res) => {
 app.post('/perizie', authMiddleware, async (req, res) => {
   const { nome_cliente, cognome_cliente, riferimento, telefono_cliente } = req.body;
   try {
+    // Controlla limite sessioni
+    const studio = await sb(`studi?id=eq.${req.utente.studio_id}&select=sessioni_mese,limite_sessioni,attivo`);
+    const s = studio[0];
+    if (!s.attivo) return res.status(403).json({ errore: 'Account sospeso. Contatta il supporto.' });
+    if (s.sessioni_mese >= s.limite_sessioni) return res.status(403).json({ errore: 'Limite sessioni mensile raggiunto. Aggiorna il piano.' });
+
     const token = uuidv4();
     sessioni[token] = { operatore: null, cliente: null };
     const data = await sb('perizie', 'POST', {
@@ -112,7 +118,7 @@ app.post('/perizie', authMiddleware, async (req, res) => {
     await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.utente.studio_id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({ sessioni_mese: await getSessioniMese(req.utente.studio_id) + 1 })
+      body: JSON.stringify({ sessioni_mese: s.sessioni_mese + 1 })
     });
     res.json(data[0]);
   } catch(e) {
@@ -221,9 +227,14 @@ app.get('/admin/logs', adminMiddleware, async (req, res) => {
 // Reset sessioni mese tutti gli studi
 app.post('/admin/reset-sessioni', adminMiddleware, async (req, res) => {
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/studi`, {
+    await fetch(`${SUPABASE_URL}/rest/v1/studi?attivo=in.(true,false)`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'return=minimal' },
+      headers: { 
+        'Content-Type': 'application/json', 
+        'apikey': SUPABASE_KEY, 
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
       body: JSON.stringify({ sessioni_mese: 0 })
     });
     res.json({ ok: true });
