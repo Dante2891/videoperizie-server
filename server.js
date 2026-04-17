@@ -186,10 +186,13 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
     const studio = await sb('studi', 'POST', {
-      nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
-    });
-    await sb('operatori', 'POST', {
-      studio_id: studio[0].id,
+	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
+	});
+	if (!studio || !studio[0] || !studio[0].id) {
+	  return res.status(500).json({ errore: 'Errore creazione studio: ' + JSON.stringify(studio) });
+	}
+	await sb('operatori', 'POST', {
+	  studio_id: studio[0].id,
       nome, cognome, email,
       password_hash: hash,
       ruolo: 'admin'
