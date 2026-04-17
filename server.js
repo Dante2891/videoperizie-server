@@ -46,7 +46,13 @@ function authMiddleware(req, res, next) {
   if (!token) return res.status(401).json({ errore: 'Non autorizzato' });
   try {
     req.utente = jwt.verify(token, JWT_SECRET);
-    next();
+    // Controlla studio attivo ad ogni richiesta
+    sb(`studi?id=eq.${req.utente.studio_id}&select=attivo`)
+      .then(data => {
+        if (!data[0]?.attivo) return res.status(403).json({ errore: 'Account sospeso' });
+        next();
+      })
+      .catch(() => next());
   } catch(e) {
     res.status(401).json({ errore: 'Token non valido' });
   }
