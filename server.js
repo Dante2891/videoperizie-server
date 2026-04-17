@@ -184,7 +184,7 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
   const { nome_studio, email_studio, nome, cognome, email, password, piano } = req.body;
   try {
     const hash = await bcrypt.hash(password, 10);
-    const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
+    const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : piano === 'base' ? 30 : 10;
     const studio = await sb('studi', 'POST', {
 	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
 	});
