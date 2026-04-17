@@ -151,6 +151,21 @@ app.post('/sessione', (req, res) => {
   res.json({ token });
 });
 
+// Verifica stato perizia dal token
+app.get('/perizie/check/:token', async (req, res) => {
+  try {
+    const data = await sb(`perizie?token_sessione=eq.${req.params.token}&select=stato,creata_il`);
+    if (!data[0]) return res.json({ valido: false, motivo: 'non_trovata' });
+    const p = data[0];
+    const minutiPassati = (Date.now() - new Date(p.creata_il)) / 60000;
+    if (p.stato === 'completata') return res.json({ valido: false, motivo: 'completata' });
+    if (minutiPassati > 60) return res.json({ valido: false, motivo: 'scaduta' });
+    res.json({ valido: true, stato: p.stato });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
 io.on('connection', (socket) => {
   socket.on('join-operatore', ({ token }) => {
     if (!sessioni[token]) sessioni[token] = { operatore: null, cliente: null };
@@ -159,6 +174,8 @@ io.on('connection', (socket) => {
     socket.token = token;
     socket.ruolo = 'operatore';
     socket.emit('joined', { ruolo: 'operatore', token });
+    socket.on('termina-sessione', ({ token }) => {
+    socket.to(token).emit('sessione-terminata');
   });
 
   socket.on('join-cliente', ({ token }) => {
