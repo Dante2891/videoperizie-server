@@ -174,7 +174,9 @@ io.on('connection', (socket) => {
     socket.token = token;
     socket.ruolo = 'operatore';
     socket.emit('joined', { ruolo: 'operatore', token });
-    socket.on('termina-sessione', ({ token }) => {
+  });
+
+  socket.on('termina-sessione', ({ token }) => {
     socket.to(token).emit('sessione-terminata');
   });
 
