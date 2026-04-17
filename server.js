@@ -24,7 +24,8 @@ app.use((req, res, next) => {
 // DB Supabase
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  family: 4
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'videoperizie_secret_2026';
