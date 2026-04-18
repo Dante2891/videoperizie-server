@@ -220,8 +220,17 @@ function adminMiddleware(req, res, next) {
 // GET tutti gli studi
 app.get('/admin/studi', adminMiddleware, async (req, res) => {
   try {
-    const data = await sb('studi?select=*&order=creato_il.desc');
-    res.json(data);
+    const studi = await sb('studi?select=*&order=creato_il.desc');
+    // Conta operatori per ogni studio
+    const studiConOperatori = await Promise.all(studi.map(async s => {
+      const ops = await sb(`operatori?studio_id=eq.${s.id}&select=id,attivo`);
+      return {
+        ...s,
+        num_operatori: ops.length,
+        num_operatori_attivi: ops.filter(o => o.attivo).length
+      };
+    }));
+    res.json(studiConOperatori);
   } catch(e) {
     res.status(500).json({ errore: e.message });
   }
