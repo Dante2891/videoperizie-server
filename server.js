@@ -155,6 +155,27 @@ app.put('/perizie/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// CAMBIO PASSWORD
+app.post('/auth/cambio-password', authMiddleware, async (req, res) => {
+  const { password_attuale, password_nuova } = req.body;
+  try {
+    const data = await sb(`operatori?id=eq.${req.utente.id}&select=password_hash`);
+    const op = data[0];
+    if (!op) return res.status(404).json({ errore: 'Utente non trovato' });
+    const ok = await bcrypt.compare(password_attuale, op.password_hash);
+    if (!ok) return res.status(401).json({ errore: 'Password attuale non corretta' });
+    const hash = await bcrypt.hash(password_nuova, 10);
+    await fetch(`${SUPABASE_URL}/rest/v1/operatori?id=eq.${req.utente.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ password_hash: hash })
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
 // GET operatori del proprio studio
 app.get('/studio/operatori', authMiddleware, async (req, res) => {
   try {
