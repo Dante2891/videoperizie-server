@@ -155,13 +155,61 @@ app.put('/perizie/:id', authMiddleware, async (req, res) => {
   }
 });
 
+// GET operatori del proprio studio
+app.get('/studio/operatori', authMiddleware, async (req, res) => {
+  try {
+    if (!['admin', 'superadmin'].includes(req.utente.ruolo)) 
+      return res.status(403).json({ errore: 'Non autorizzato' });
+    const data = await sb(`operatori?studio_id=eq.${req.utente.studio_id}&select=id,nome,cognome,email,ruolo,attivo,creato_il&order=creato_il.asc`);
+    res.json(data);
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// CREA operatore nel proprio studio
+app.post('/studio/operatori', authMiddleware, async (req, res) => {
+  const { nome, cognome, email, password } = req.body;
+  try {
+    if (!['admin', 'superadmin'].includes(req.utente.ruolo))
+      return res.status(403).json({ errore: 'Non autorizzato' });
+    const hash = await bcrypt.hash(password, 10);
+    await sb('operatori', 'POST', {
+      studio_id: req.utente.studio_id,
+      nome, cognome, email,
+      password_hash: hash,
+      ruolo: 'operatore'
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// AGGIORNA operatore del proprio studio (attivo/disattivo)
+app.put('/studio/operatori/:id', authMiddleware, async (req, res) => {
+  const { attivo } = req.body;
+  try {
+    if (!['admin', 'superadmin'].includes(req.utente.ruolo))
+      return res.status(403).json({ errore: 'Non autorizzato' });
+    await fetch(`${SUPABASE_URL}/rest/v1/operatori?id=eq.${req.params.id}&studio_id=eq.${req.utente.studio_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ attivo })
+    });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
 // Middleware solo admin piattaforma
 function adminMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ errore: 'Non autorizzato' });
   try {
     const utente = jwt.verify(token, JWT_SECRET);
-    if (utente.ruolo !== 'admin') return res.status(403).json({ errore: 'Non autorizzato' });
+    if (utente.ruolo !== 'superadmin') return res.status(403).json({ errore: 'Non autorizzato' });
     req.utente = utente;
     next();
   } catch(e) {
