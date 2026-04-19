@@ -259,12 +259,12 @@ app.get('/admin/studi', adminMiddleware, async (req, res) => {
 
 // CREA nuovo studio + operatore admin
 app.post('/admin/studi', adminMiddleware, async (req, res) => {
-  const { nome_studio, email_studio, nome, cognome, email, password, piano } = req.body;
+  const { nome_studio, email_studio, nome, cognome, email, password, piano, logo_url } = req.body;
   try {
     const hash = await bcrypt.hash(password, 10);
     const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : piano === 'base' ? 30 : 10;
     const studio = await sb('studi', 'POST', {
-	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
+	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite, logo_url: logo_url || null
 	});
 	if (!studio || !studio[0] || !studio[0].id) {
 	  return res.status(500).json({ errore: 'Errore creazione studio: ' + JSON.stringify(studio) });
@@ -281,16 +281,17 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
   }
 });
 
-// AGGIORNA studio (piano, attivo)
+// AGGIORNA studio (piano, attivo, logo_url)
 app.put('/admin/studi/:id', adminMiddleware, async (req, res) => {
-  const { piano, attivo } = req.body;
+  const { piano, attivo, logo_url } = req.body;
   try {
     const body = {};
     if (piano !== undefined) {
       body.piano = piano;
-      body.limite_sessioni = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
+      body.limite_sessioni = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : piano === 'base' ? 30 : 10;
     }
     if (attivo !== undefined) body.attivo = attivo;
+    if (logo_url !== undefined) body.logo_url = logo_url;
     await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.params.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
@@ -343,13 +344,16 @@ app.post('/sessione', (req, res) => {
 // Verifica stato perizia dal token
 app.get('/perizie/check/:token', async (req, res) => {
   try {
-    const data = await sb(`perizie?token_sessione=eq.${req.params.token}&select=stato,creata_il`);
+    const data = await sb(`perizie?token_sessione=eq.${req.params.token}&select=stato,creata_il,studio_id`);
     if (!data[0]) return res.json({ valido: false, motivo: 'non_trovata' });
     const p = data[0];
     const minutiPassati = (Date.now() - new Date(p.creata_il)) / 60000;
     if (p.stato === 'completata') return res.json({ valido: false, motivo: 'completata' });
     if (minutiPassati > 60) return res.json({ valido: false, motivo: 'scaduta' });
-    res.json({ valido: true, stato: p.stato });
+    // Recupera logo studio
+    const studio = await sb(`studi?id=eq.${p.studio_id}&select=logo_url`);
+    const logo_url = studio[0]?.logo_url || null;
+    res.json({ valido: true, stato: p.stato, logo_url });
   } catch(e) {
     res.status(500).json({ errore: e.message });
   }
