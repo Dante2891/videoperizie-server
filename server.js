@@ -176,6 +176,16 @@ app.post('/auth/cambio-password', authMiddleware, async (req, res) => {
   }
 });
 
+// GET logo dello studio corrente
+app.get('/studio/logo', authMiddleware, async (req, res) => {
+  try {
+    const data = await sb(`studi?id=eq.${req.utente.studio_id}&select=logo_url`);
+    res.json({ logo_url: data[0]?.logo_url || null });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
 // GET operatori del proprio studio
 app.get('/studio/operatori', authMiddleware, async (req, res) => {
   try {
