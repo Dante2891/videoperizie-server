@@ -24,24 +24,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const JWT_SECRET = process.env.JWT_SECRET || 'videoperizie_secret_2026';
 
-// Helper log errori su Supabase
-async function logErrore(tipo, messaggio, dettagli = null, studio_id = null) {
-  try {
-    await fetch(`${process.env.SUPABASE_URL}/rest/v1/logs`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': process.env.SUPABASE_KEY,
-        'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({ tipo, messaggio, dettagli, studio_id })
-    });
-  } catch(e) {
-    console.error('Errore log:', e.message);
-  }
-}
-
 // Helper chiamate Supabase REST
 async function sb(path, method = 'GET', body = null) {
   const opts = {
@@ -85,19 +67,11 @@ app.post('/auth/login', async (req, res) => {
   try {
     const data = await sb(`operatori?email=eq.${encodeURIComponent(email)}&select=*,studi(nome,piano,attivo,limite_sessioni)`);
     const op = data[0];
-    if (!op) {
-      await logErrore('login_fallito', `Email non trovata: ${email}`);
-      return res.status(401).json({ errore: 'Credenziali non valide' });
-    }
-    if (!op.attivo || !op.studi?.attivo) {
-      await logErrore('login_bloccato', `Account disabilitato: ${email}`, null, op.studio_id);
-      return res.status(403).json({ errore: 'Account disabilitato' });
-    }
+    if (!op) return res.status(401).json({ errore: 'Credenziali non valide' });
+    if (!op.attivo || !op.studi?.attivo) return res.status(403).json({ errore: 'Account disabilitato' });
+
     const ok = await bcrypt.compare(password, op.password_hash);
-    if (!ok) {
-      await logErrore('login_fallito', `Password errata: ${email}`, null, op.studio_id);
-      return res.status(401).json({ errore: 'Credenziali non valide' });
-    }
+    if (!ok) return res.status(401).json({ errore: 'Credenziali non valide' });
 
     const token = jwt.sign({
       id: op.id,
@@ -125,7 +99,6 @@ app.get('/perizie', authMiddleware, async (req, res) => {
     }));
     res.json(mapped);
   } catch(e) {
-    await logErrore('errore_server', 'GET /perizie: ' + e.message, null, req.utente.studio_id);
     res.status(500).json({ errore: e.message });
   }
 });
@@ -137,14 +110,8 @@ app.post('/perizie', authMiddleware, async (req, res) => {
     // Controlla limite sessioni
     const studio = await sb(`studi?id=eq.${req.utente.studio_id}&select=sessioni_mese,limite_sessioni,attivo`);
     const s = studio[0];
-    if (!s.attivo) {
-      await logErrore('account_sospeso', 'Tentativo creazione perizia con account sospeso', null, req.utente.studio_id);
-      return res.status(403).json({ errore: 'Account sospeso. Contatta il supporto.' });
-    }
-    if (s.sessioni_mese >= s.limite_sessioni) {
-      await logErrore('limite_raggiunto', `Limite sessioni raggiunto: ${s.sessioni_mese}/${s.limite_sessioni}`, null, req.utente.studio_id);
-      return res.status(403).json({ errore: 'Limite sessioni mensile raggiunto. Aggiorna il piano.' });
-    }
+    if (!s.attivo) return res.status(403).json({ errore: 'Account sospeso. Contatta il supporto.' });
+    if (s.sessioni_mese >= s.limite_sessioni) return res.status(403).json({ errore: 'Limite sessioni mensile raggiunto. Aggiorna il piano.' });
 
     const token = uuidv4();
     sessioni[token] = { operatore: null, cliente: null };
