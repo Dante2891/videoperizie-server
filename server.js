@@ -24,6 +24,24 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const JWT_SECRET = process.env.JWT_SECRET || 'videoperizie_secret_2026';
 
+// Helper log errori su Supabase
+async function logErrore(tipo, messaggio, dettagli = null, studio_id = null) {
+  try {
+    await fetch(`${process.env.SUPABASE_URL}/rest/v1/logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': process.env.SUPABASE_KEY,
+        'Authorization': `Bearer ${process.env.SUPABASE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ tipo, messaggio, dettagli, studio_id })
+    });
+  } catch(e) {
+    console.error('Errore log:', e.message);
+  }
+}
+
 // Helper chiamate Supabase REST
 async function sb(path, method = 'GET', body = null) {
   const opts = {
@@ -67,11 +85,19 @@ app.post('/auth/login', async (req, res) => {
   try {
     const data = await sb(`operatori?email=eq.${encodeURIComponent(email)}&select=*,studi(nome,piano,attivo,limite_sessioni)`);
     const op = data[0];
-    if (!op) return res.status(401).json({ errore: 'Credenziali non valide' });
-    if (!op.attivo || !op.studi?.attivo) return res.status(403).json({ errore: 'Account disabilitato' });
-
+    if (!op) {
+      await logErrore('login_fallito', `Email non trovata: ${email}`);
+      return res.status(401).json({ errore: 'Credenziali non valide' });
+    }
+    if (!op.attivo || !op.studi?.attivo) {
+      await logErrore('login_bloccato', `Account disabilitato: ${email}`, null, op.studio_id);
+      return res.status(403).json({ errore: 'Account disabilitato' });
+    }
     const ok = await bcrypt.compare(password, op.password_hash);
-    if (!ok) return res.status(401).json({ errore: 'Credenziali non valide' });
+    if (!ok) {
+      await logErrore('login_fallito', `Password errata: ${email}`, null, op.studio_id);
+      return res.status(401).json({ errore: 'Credenziali non valide' });
+    }
 
     const token = jwt.sign({
       id: op.id,
@@ -99,6 +125,7 @@ app.get('/perizie', authMiddleware, async (req, res) => {
     }));
     res.json(mapped);
   } catch(e) {
+    await logErrore('errore_server', 'GET /perizie: ' + e.message, null, req.utente.studio_id);
     res.status(500).json({ errore: e.message });
   }
 });
@@ -110,8 +137,14 @@ app.post('/perizie', authMiddleware, async (req, res) => {
     // Controlla limite sessioni
     const studio = await sb(`studi?id=eq.${req.utente.studio_id}&select=sessioni_mese,limite_sessioni,attivo`);
     const s = studio[0];
-    if (!s.attivo) return res.status(403).json({ errore: 'Account sospeso. Contatta il supporto.' });
-    if (s.sessioni_mese >= s.limite_sessioni) return res.status(403).json({ errore: 'Limite sessioni mensile raggiunto. Aggiorna il piano.' });
+    if (!s.attivo) {
+      await logErrore('account_sospeso', 'Tentativo creazione perizia con account sospeso', null, req.utente.studio_id);
+      return res.status(403).json({ errore: 'Account sospeso. Contatta il supporto.' });
+    }
+    if (s.sessioni_mese >= s.limite_sessioni) {
+      await logErrore('limite_raggiunto', `Limite sessioni raggiunto: ${s.sessioni_mese}/${s.limite_sessioni}`, null, req.utente.studio_id);
+      return res.status(403).json({ errore: 'Limite sessioni mensile raggiunto. Aggiorna il piano.' });
+    }
 
     const token = uuidv4();
     sessioni[token] = { operatore: null, cliente: null };
@@ -171,16 +204,6 @@ app.post('/auth/cambio-password', authMiddleware, async (req, res) => {
       body: JSON.stringify({ password_hash: hash })
     });
     res.json({ ok: true });
-  } catch(e) {
-    res.status(500).json({ errore: e.message });
-  }
-});
-
-// GET logo dello studio corrente
-app.get('/studio/logo', authMiddleware, async (req, res) => {
-  try {
-    const data = await sb(`studi?id=eq.${req.utente.studio_id}&select=logo_url`);
-    res.json({ logo_url: data[0]?.logo_url || null });
   } catch(e) {
     res.status(500).json({ errore: e.message });
   }
@@ -269,12 +292,12 @@ app.get('/admin/studi', adminMiddleware, async (req, res) => {
 
 // CREA nuovo studio + operatore admin
 app.post('/admin/studi', adminMiddleware, async (req, res) => {
-  const { nome_studio, email_studio, nome, cognome, email, password, piano, logo_url } = req.body;
+  const { nome_studio, email_studio, nome, cognome, email, password, piano } = req.body;
   try {
     const hash = await bcrypt.hash(password, 10);
     const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : piano === 'base' ? 30 : 10;
     const studio = await sb('studi', 'POST', {
-	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite, logo_url: logo_url || null
+	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
 	});
 	if (!studio || !studio[0] || !studio[0].id) {
 	  return res.status(500).json({ errore: 'Errore creazione studio: ' + JSON.stringify(studio) });
@@ -291,17 +314,16 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
   }
 });
 
-// AGGIORNA studio (piano, attivo, logo_url)
+// AGGIORNA studio (piano, attivo)
 app.put('/admin/studi/:id', adminMiddleware, async (req, res) => {
-  const { piano, attivo, logo_url } = req.body;
+  const { piano, attivo } = req.body;
   try {
     const body = {};
     if (piano !== undefined) {
       body.piano = piano;
-      body.limite_sessioni = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : piano === 'base' ? 30 : 10;
+      body.limite_sessioni = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
     }
     if (attivo !== undefined) body.attivo = attivo;
-    if (logo_url !== undefined) body.logo_url = logo_url;
     await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.params.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
@@ -354,16 +376,13 @@ app.post('/sessione', (req, res) => {
 // Verifica stato perizia dal token
 app.get('/perizie/check/:token', async (req, res) => {
   try {
-    const data = await sb(`perizie?token_sessione=eq.${req.params.token}&select=stato,creata_il,studio_id`);
+    const data = await sb(`perizie?token_sessione=eq.${req.params.token}&select=stato,creata_il`);
     if (!data[0]) return res.json({ valido: false, motivo: 'non_trovata' });
     const p = data[0];
     const minutiPassati = (Date.now() - new Date(p.creata_il)) / 60000;
     if (p.stato === 'completata') return res.json({ valido: false, motivo: 'completata' });
     if (minutiPassati > 60) return res.json({ valido: false, motivo: 'scaduta' });
-    // Recupera logo studio
-    const studio = await sb(`studi?id=eq.${p.studio_id}&select=logo_url`);
-    const logo_url = studio[0]?.logo_url || null;
-    res.json({ valido: true, stato: p.stato, logo_url });
+    res.json({ valido: true, stato: p.stato });
   } catch(e) {
     res.status(500).json({ errore: e.message });
   }
