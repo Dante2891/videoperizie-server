@@ -28,7 +28,8 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 // Invia email con Resend
 async function inviaEmail(to, nome, link) {
   try {
-    await fetch('https://api.resend.com/emails', {
+    console.log(`[EMAIL] Invio a: ${to}, chiave: ${RESEND_API_KEY ? RESEND_API_KEY.slice(0,8) + '...' : 'MANCANTE'}`);
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -38,26 +39,18 @@ async function inviaEmail(to, nome, link) {
         from: 'Ispecto <noreply@studiolotti.org>',
         to: [to],
         subject: 'La tua videoperizia è pronta',
-        html: `
-          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9f9f9;">
-            <div style="background:#fff;border-radius:12px;padding:32px;border:1px solid #e5e7eb;">
-              <img src="https://studiolotti.org/videoperizie/Logo.png" alt="Ispecto" style="height:48px;margin-bottom:24px;">
-              <h2 style="color:#111827;margin-bottom:8px;">Gentile ${nome},</h2>
-              <p style="color:#6b7280;line-height:1.6;margin-bottom:24px;">
-                È stata richiesta una videoperizia per lei. Clicchi sul pulsante qui sotto per avviare la sessione con l'operatore.
-              </p>
-              <a href="${link}" style="display:inline-block;background:#3b82f6;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:1rem;">
-                📹 Avvia Videoperizia
-              </a>
-              <p style="color:#9ca3af;font-size:0.82rem;margin-top:24px;">
-                Il link è valido per 60 minuti. Se ha problemi contatti il suo operatore.
-              </p>
-            </div>
-          </div>
-        `
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;">
+          <h2>Gentile ${nome},</h2>
+          <p>È stata richiesta una videoperizia. Clicchi sul link per avviare la sessione:</p>
+          <a href="${link}" style="display:inline-block;background:#3b82f6;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;">📹 Avvia Videoperizia</a>
+          <p style="color:#9ca3af;font-size:0.82rem;margin-top:24px;">Il link è valido per 60 minuti.</p>
+        </div>`
       })
     });
+    const result = await response.json();
+    console.log('[EMAIL] Risposta Resend:', JSON.stringify(result));
   } catch(e) {
+    console.log('[EMAIL] Errore:', e.message);
     await logErrore('errore_email', 'Invio email fallito: ' + e.message);
   }
 }
