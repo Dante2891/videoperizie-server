@@ -35,7 +35,7 @@ async function inviaEmail(to, nome, link) {
         'Authorization': `Bearer ${RESEND_API_KEY}`
       },
       body: JSON.stringify({
-        from: 'Ispecto <noreply@ispecto.it>',
+        from: 'Ispecto <noreply@studiolotti.org>',
         to: [to],
         subject: 'La tua videoperizia è pronta',
         html: `
