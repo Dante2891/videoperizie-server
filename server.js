@@ -23,6 +23,44 @@ app.use((req, res, next) => {
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const JWT_SECRET = process.env.JWT_SECRET || 'videoperizie_secret_2026';
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+// Invia email con Resend
+async function inviaEmail(to, nome, link) {
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${RESEND_API_KEY}`
+      },
+      body: JSON.stringify({
+        from: 'Ispecto <noreply@ispecto.it>',
+        to: [to],
+        subject: 'La tua videoperizia è pronta',
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9f9f9;">
+            <div style="background:#fff;border-radius:12px;padding:32px;border:1px solid #e5e7eb;">
+              <img src="https://studiolotti.org/videoperizie/Logo.png" alt="Ispecto" style="height:48px;margin-bottom:24px;">
+              <h2 style="color:#111827;margin-bottom:8px;">Gentile ${nome},</h2>
+              <p style="color:#6b7280;line-height:1.6;margin-bottom:24px;">
+                È stata richiesta una videoperizia per lei. Clicchi sul pulsante qui sotto per avviare la sessione con l'operatore.
+              </p>
+              <a href="${link}" style="display:inline-block;background:#3b82f6;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:1rem;">
+                📹 Avvia Videoperizia
+              </a>
+              <p style="color:#9ca3af;font-size:0.82rem;margin-top:24px;">
+                Il link è valido per 60 minuti. Se ha problemi contatti il suo operatore.
+              </p>
+            </div>
+          </div>
+        `
+      })
+    });
+  } catch(e) {
+    await logErrore('errore_email', 'Invio email fallito: ' + e.message);
+  }
+}
 
 // Helper chiamate Supabase REST
 async function sb(path, method = 'GET', body = null) {
@@ -105,7 +143,7 @@ app.get('/perizie', authMiddleware, async (req, res) => {
 
 // CREA PERIZIA
 app.post('/perizie', authMiddleware, async (req, res) => {
-  const { nome_cliente, cognome_cliente, riferimento, telefono_cliente } = req.body;
+  const { nome_cliente, cognome_cliente, riferimento, telefono_cliente, email_cliente } = req.body;
   try {
     // Controlla limite sessioni
     const studio = await sb(`studi?id=eq.${req.utente.studio_id}&select=sessioni_mese,limite_sessioni,attivo`);
@@ -119,6 +157,7 @@ app.post('/perizie', authMiddleware, async (req, res) => {
       studio_id: req.utente.studio_id,
       operatore_id: req.utente.id,
       nome_cliente, cognome_cliente, riferimento, telefono_cliente,
+      email_cliente: email_cliente || null,
       token_sessione: token
     });
     // Incrementa sessioni_mese studio
@@ -127,6 +166,11 @@ app.post('/perizie', authMiddleware, async (req, res) => {
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ sessioni_mese: s.sessioni_mese + 1 })
     });
+    // Invia email se disponibile
+    if (email_cliente) {
+      const link = `${process.env.BASE_URL || 'https://studiolotti.org'}/videoperizie/cliente.html?token=${token}`;
+      await inviaEmail(email_cliente, nome_cliente, link);
+    }
     res.json(data[0]);
   } catch(e) {
     res.status(500).json({ errore: e.message });
@@ -170,6 +214,21 @@ app.post('/auth/cambio-password', authMiddleware, async (req, res) => {
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
       body: JSON.stringify({ password_hash: hash })
     });
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ errore: e.message });
+  }
+});
+
+// REINVIA EMAIL link perizia
+app.post('/perizie/:id/invia-email', authMiddleware, async (req, res) => {
+  try {
+    const data = await sb(`perizie?id=eq.${req.params.id}&studio_id=eq.${req.utente.studio_id}&select=nome_cliente,email_cliente,token_sessione`);
+    const p = data[0];
+    if (!p) return res.status(404).json({ errore: 'Perizia non trovata' });
+    if (!p.email_cliente) return res.status(400).json({ errore: 'Nessuna email cliente' });
+    const link = `${process.env.BASE_URL || 'https://studiolotti.org'}/videoperizie/cliente.html?token=${p.token_sessione}`;
+    await inviaEmail(p.email_cliente, p.nome_cliente, link);
     res.json({ ok: true });
   } catch(e) {
     res.status(500).json({ errore: e.message });
