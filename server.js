@@ -233,7 +233,7 @@ app.get('/studio/operatori', authMiddleware, async (req, res) => {
   try {
     if (!['admin', 'superadmin'].includes(req.utente.ruolo)) 
       return res.status(403).json({ errore: 'Non autorizzato' });
-    const data = await sb(`operatori?studio_id=eq.${req.utente.studio_id}&select=id,nome,cognome,email,ruolo,attivo,creato_il&order=creato_il.asc`);
+    const data = await sb(`operatori?studio_id=eq.${req.utente.studio_id}&select=id,nome,cognome,email,ruolo,attivo,creato_il&order=creato_il.asc&limit=100`);
     res.json(data);
   } catch(e) {
     res.status(500).json({ errore: e.message });
