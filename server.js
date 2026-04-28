@@ -335,7 +335,7 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
 
 // AGGIORNA studio (piano, attivo, token_disponibili, logo_url)
 app.put('/admin/studi/:id', adminMiddleware, async (req, res) => {
-  const { piano, attivo, token_disponibili, logo_url } = req.body;
+  const { piano, attivo, token_disponibili, token_usati, logo_url } = req.body;
   try {
     const body = {};
     if (piano !== undefined) {
@@ -343,6 +343,7 @@ app.put('/admin/studi/:id', adminMiddleware, async (req, res) => {
       body.token_disponibili = piano === 'pro' ? 999999 : piano === 'base' ? 30 : 10;
     }
     if (token_disponibili !== undefined) body.token_disponibili = token_disponibili;
+    if (token_usati !== undefined) body.token_usati = token_usati;
     if (attivo !== undefined) body.attivo = attivo;
     if (logo_url !== undefined) body.logo_url = logo_url;
     await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.params.id}`, {
