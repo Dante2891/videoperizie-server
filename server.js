@@ -96,7 +96,7 @@ app.get('/', (req, res) => res.send('Videoperizie server attivo ✓'));
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const data = await sb(`operatori?email=eq.${encodeURIComponent(email)}&select=*,studi(nome,piano,attivo,limite_sessioni)`);
+    const data = await sb(`operatori?email=eq.${encodeURIComponent(email)}&select=*,studi(nome,piano,attivo,token_disponibili)`);
     const op = data[0];
     if (!op) return res.status(401).json({ errore: 'Credenziali non valide' });
     if (!op.attivo || !op.studi?.attivo) return res.status(403).json({ errore: 'Account disabilitato' });
@@ -139,10 +139,10 @@ app.post('/perizie', authMiddleware, async (req, res) => {
   const { nome_cliente, cognome_cliente, riferimento, telefono_cliente, email_cliente } = req.body;
   try {
     // Controlla limite sessioni
-    const studio = await sb(`studi?id=eq.${req.utente.studio_id}&select=sessioni_mese,limite_sessioni,attivo`);
+    const studio = await sb(`studi?id=eq.${req.utente.studio_id}&select=token_usati,token_disponibili,attivo`);
     const s = studio[0];
     if (!s.attivo) return res.status(403).json({ errore: 'Account sospeso. Contatta il supporto.' });
-    if (s.sessioni_mese >= s.limite_sessioni) return res.status(403).json({ errore: 'Limite sessioni mensile raggiunto. Aggiorna il piano.' });
+    if (s.token_usati >= s.token_disponibili) return res.status(403).json({ errore: 'Token esauriti. Acquista nuovi token per continuare.' });
 
     const token = uuidv4();
     sessioni[token] = { operatore: null, cliente: null };
@@ -153,11 +153,11 @@ app.post('/perizie', authMiddleware, async (req, res) => {
       email_cliente: email_cliente || null,
       token_sessione: token
     });
-    // Incrementa sessioni_mese studio
+    // Incrementa token_usati studio
     await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.utente.studio_id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
-      body: JSON.stringify({ sessioni_mese: s.sessioni_mese + 1 })
+      body: JSON.stringify({ token_usati: s.token_usati + 1 })
     });
     // Invia email se disponibile
     if (email_cliente) {
@@ -171,8 +171,8 @@ app.post('/perizie', authMiddleware, async (req, res) => {
 });
 
 async function getSessioniMese(studio_id) {
-  const data = await sb(`studi?id=eq.${studio_id}&select=sessioni_mese`);
-  return data[0]?.sessioni_mese || 0;
+  const data = await sb(`studi?id=eq.${studio_id}&select=token_usati`);
+  return data[0]?.token_usati || 0;
 }
 
 // AGGIORNA STATO PERIZIA
@@ -314,9 +314,9 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
   const { nome_studio, email_studio, nome, cognome, email, password, piano } = req.body;
   try {
     const hash = await bcrypt.hash(password, 10);
-    const limite = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : piano === 'base' ? 30 : 10;
+    const limite = piano === 'pro' ? 999999 : piano === 'base' ? 30 : 10;
     const studio = await sb('studi', 'POST', {
-	  nome: nome_studio, email: email_studio, piano, limite_sessioni: limite
+	  nome: nome_studio, email: email_studio, piano, token_disponibili: limite
 	});
 	if (!studio || !studio[0] || !studio[0].id) {
 	  return res.status(500).json({ errore: 'Errore creazione studio: ' + JSON.stringify(studio) });
@@ -333,16 +333,18 @@ app.post('/admin/studi', adminMiddleware, async (req, res) => {
   }
 });
 
-// AGGIORNA studio (piano, attivo)
+// AGGIORNA studio (piano, attivo, token_disponibili, logo_url)
 app.put('/admin/studi/:id', adminMiddleware, async (req, res) => {
-  const { piano, attivo } = req.body;
+  const { piano, attivo, token_disponibili, logo_url } = req.body;
   try {
     const body = {};
     if (piano !== undefined) {
       body.piano = piano;
-      body.limite_sessioni = piano === 'pro' ? 999999 : piano === 'studio' ? 100 : 30;
+      body.token_disponibili = piano === 'pro' ? 999999 : piano === 'base' ? 30 : 10;
     }
+    if (token_disponibili !== undefined) body.token_disponibili = token_disponibili;
     if (attivo !== undefined) body.attivo = attivo;
+    if (logo_url !== undefined) body.logo_url = logo_url;
     await fetch(`${SUPABASE_URL}/rest/v1/studi?id=eq.${req.params.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
@@ -375,7 +377,7 @@ app.post('/admin/reset-sessioni', adminMiddleware, async (req, res) => {
         'Authorization': `Bearer ${SUPABASE_KEY}`,
         'Prefer': 'return=minimal'
       },
-      body: JSON.stringify({ sessioni_mese: 0 })
+      body: JSON.stringify({ token_usati: 0 })
     });
     res.json({ ok: true });
   } catch(e) {
