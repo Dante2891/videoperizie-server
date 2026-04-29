@@ -24,52 +24,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 const JWT_SECRET = process.env.JWT_SECRET || 'videoperizie_secret_2026';
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-
-// Genera credenziali TURN Twilio
-async function getTwilioIceServers() {
-  try {
-    const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Tokens.json`, {
-      method: 'POST',
-      headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
-    const data = await res.json();
-    return data.ice_servers || null;
-  } catch(e) {
-    console.error('Errore Twilio TURN:', e.message);
-    return null;
-  }
-}
-
-// Endpoint ICE servers pubblico per cliente (usa token perizia)
-app.get('/ice-servers-public/:token', async (req, res) => {
-  try {
-    const data = await sb(`perizie?token_sessione=eq.${req.params.token}&select=stato`);
-    if (!data[0]) return res.status(404).json({ errore: 'Token non valido' });
-    const servers = await getTwilioIceServers();
-    res.json({ iceServers: servers || [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]});
-  } catch(e) {
-    res.json({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-  }
-});
-
-// Endpoint ICE servers
-app.get('/ice-servers', authMiddleware, async (req, res) => {
-  const servers = await getTwilioIceServers();
-  if (servers) {
-    res.json({ iceServers: servers });
-  } else {
-    res.json({ iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]});
-  }
-});
 
 // Invia email con Resend
 async function inviaEmail(to, nome, link) {
@@ -483,6 +437,9 @@ io.on('connection', (socket) => {
   socket.on('scatta-foto', ({ token }) => socket.to(token).emit('scatta-foto'));
   socket.on('foto', ({ token, blob }) => socket.to(token).emit('foto', { blob }));
   socket.on('chat-msg', ({ token, testo }) => socket.to(token).emit('chat-msg', { testo }));
+  socket.on('imposta-limiti', ({ token, maxBitrate, maxFps }) => {
+    socket.to(token).emit('imposta-limiti', { maxBitrate, maxFps });
+  });
 
   socket.on('disconnect', () => {
     const token = socket.token;
