@@ -435,11 +435,8 @@ io.on('connection', (socket) => {
 
   socket.on('segnale', ({ token, data }) => socket.to(token).emit('segnale', { data }));
   socket.on('scatta-foto', ({ token }) => socket.to(token).emit('scatta-foto'));
-  socket.on('foto', ({ token, blob }) => socket.to(token).emit('foto', { blob }));
+  socket.on('foto', ({ token, blob, gps }) => socket.to(token).emit('foto', { blob, gps }));
   socket.on('chat-msg', ({ token, testo }) => socket.to(token).emit('chat-msg', { testo }));
-  socket.on('imposta-limiti', ({ token, maxBitrate, maxFps }) => {
-    socket.to(token).emit('imposta-limiti', { maxBitrate, maxFps });
-  });
 
   socket.on('disconnect', () => {
     const token = socket.token;
