@@ -439,6 +439,7 @@ io.on('connection', (socket) => {
   socket.on('scatta-foto', ({ token }) => socket.to(token).emit('scatta-foto'));
   socket.on('foto', ({ token, blob, gps }) => socket.to(token).emit('foto', { blob, gps }));
   socket.on('chat-msg', ({ token, testo }) => socket.to(token).emit('chat-msg', { testo }));
+  socket.on('refresh-video', ({ token }) => socket.to(token).emit('refresh-video'));
 
   socket.on('disconnect', () => {
     const token = socket.token;
