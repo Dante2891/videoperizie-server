@@ -417,10 +417,12 @@ io.on('connection', (socket) => {
     socket.token = token;
     socket.ruolo = 'operatore';
     socket.emit('joined', { ruolo: 'operatore', token });
+    if (sessioni[token].cliente) socket.emit('cliente-connesso');
   });
 
   socket.on('termina-sessione', ({ token }) => {
     socket.to(token).emit('sessione-terminata');
+    if (sessioni[token]) sessioni[token].terminata = true;
   });
 
   socket.on('join-cliente', ({ token }) => {
@@ -441,7 +443,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const token = socket.token;
     if (token && sessioni[token]) {
-      socket.to(token).emit('peer-disconnesso', { ruolo: socket.ruolo });
+      if (!sessioni[token].terminata) socket.to(token).emit('peer-disconnesso', { ruolo: socket.ruolo });
       if (socket.ruolo === 'cliente') sessioni[token].cliente = null;
       if (socket.ruolo === 'operatore') sessioni[token].operatore = null;
     }
